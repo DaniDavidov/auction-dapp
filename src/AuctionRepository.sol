@@ -22,7 +22,7 @@ contract AuctionRepository is ReentrancyGuard {
     mapping (uint256 auctionId => Bid[] bids) private auctionBids;
 
     modifier contractIsDeedOperator(uint256 _tokenId, address _deedRepoAddress) {
-        DeedRepository memory deedRepository = DeedRepository(_deedRepoAddress);
+        DeedRepository deedRepository = DeedRepository(_deedRepoAddress);
         address operator = deedRepository.getApproved(_tokenId);
         if (operator != address(this)) {
             revert AuctionRepository__DeedOperatorMustBeAuctionContract();
@@ -142,7 +142,7 @@ contract AuctionRepository is ReentrancyGuard {
         }
 
         if (bids.length == 0) {
-            cancelAuction(_auctionId);
+            cancelAuction(_auctionId, _deedRepoAddress);
         } else {
             // return the bid to the bidder
             Bid memory lastBid = bids[bids.length - 1];
@@ -152,7 +152,7 @@ contract AuctionRepository is ReentrancyGuard {
             }
 
             // return the deed ownership to the owner of the auction
-            DeedRepository memory deedRepository = DeedRepository(_deedRepoAddress);
+            DeedRepository deedRepository = DeedRepository(_deedRepoAddress);
             deedRepository.safeTransferFrom(address(this), auction.owner, auction.deedId);
             auctions[_auctionId].finalized = true;
             emit AuctionFinalized(msg.sender, _auctionId);
@@ -167,8 +167,8 @@ contract AuctionRepository is ReentrancyGuard {
     * @param _startPrice uint256 starting price of the auction
     * @param _blockDeadline uint is the timestamp in which the auction expires
     */
-    function createAuction(uint256 _deedId, address _deedRepoAddress, string memory _auctionTitle, uint256 _startPrice, uint _blockDeadline) external contractIsDeedOperator(_deedId) {
-        DeedRepository memory deedRepository = DeedRepository(_deedRepoAddress);
+    function createAuction(uint256 _deedId, address _deedRepoAddress, string memory _auctionTitle, uint256 _startPrice, uint _blockDeadline) external contractIsDeedOperator(_deedId, _deedRepoAddress) {
+        DeedRepository deedRepository = DeedRepository(_deedRepoAddress);
         address owner = deedRepository.ownerOf(_deedId);
         uint256 auctionId = getAuctionsCount() + 1;
         Auction memory auction;
@@ -203,7 +203,7 @@ contract AuctionRepository is ReentrancyGuard {
 
         auctions[_auctionId].finalized = true;
 
-        DeedRepository memory deedRepository = DeedRepository(_deedRepoAddress);
+        DeedRepository deedRepository = DeedRepository(_deedRepoAddress);
         deedRepository.safeTransferFrom(address(this), auction.owner, auction.deedId);
 
         Bid[] memory bids = auctionBids[_auctionId];
