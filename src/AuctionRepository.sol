@@ -41,7 +41,7 @@ contract AuctionRepository is ReentrancyGuard {
         uint256 deedId;
         uint256 startPrice;
         address payable owner;
-        bool active;
+        bool finalized;
     }
 
     event AuctionCreated(uint256 indexed auctionId, uint256 indexed deedId);
@@ -74,6 +74,7 @@ contract AuctionRepository is ReentrancyGuard {
      * @param _auctionId The ID number of the auction
      * @dev Bidder bids on auction in case every one of these conditions are true
      *      - Bidder is not the owner of the auction
+     *      - Auction not finalized
      *      - Auction not expired
      *      - Bid amount is greater than current bid or starting price(if no bid)
      */
@@ -84,6 +85,10 @@ contract AuctionRepository is ReentrancyGuard {
         }
 
         Auction memory auction = getAuctionById(_auctionId);
+        if (auction.finalized) {
+            revert AuctionRepository__AuctionExpired();
+        }
+
         if (msg.sender == auction.owner) {
             revert AuctionRepository__OwnerCannotBidOnOwnAuction();
         }
@@ -131,6 +136,10 @@ contract AuctionRepository is ReentrancyGuard {
         Auction memory auction = getAuctionById(_auctionId);
         Bid[] memory bids = auctionBids[_auctionId];
 
+        if (auction.finalized) {
+            revert AuctionRepository__AuctionExpired();
+        }
+
         if (block.timestamp < auction.blockDeadline) {
             revert AuctionRepository__AuctionNotEnded();
         }
@@ -147,7 +156,7 @@ contract AuctionRepository is ReentrancyGuard {
 
             // return the deed ownership to the owner of the auction
             i_deedRepository.safeTransferFrom(address(this), auction.owner, auction.deedId);
-            auctions[_auctionId].active = false;
+            auctions[_auctionId].finalized = true;
             emit AuctionFinalized(msg.sender, _auctionId);
         }
     }
@@ -168,7 +177,7 @@ contract AuctionRepository is ReentrancyGuard {
         auction.deedId = _deedId;
         auction.startPrice = _startPrice;
         auction.owner = payable(owner);
-        auction.active = true;
+        auction.finalized = false;
         ownerAuctions[owner].push(auctionId);
         auctions.push(auction);
 
@@ -191,7 +200,7 @@ contract AuctionRepository is ReentrancyGuard {
             revert AuctionRepository__AuctionExpired();
         }
 
-        auctions[_auctionId].active = false;
+        auctions[_auctionId].finalized = true;
 
         i_deedRepository.safeTransferFrom(address(this), auction.owner, auction.deedId);
 
