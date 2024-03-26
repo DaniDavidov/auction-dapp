@@ -65,6 +65,12 @@ contract AuctionRepository is ReentrancyGuard {
         return auctions[_auctionId];
     }
 
+    function getAuctionCurrentBid(uint256 _auctionId) external view returns (address, uint256) {
+        Bid[] memory bids = auctionBids[_auctionId];
+        Bid memory currentBid = bids[bids.length - 1];
+        return (currentBid.bidder, currentBid.amount);
+    }
+
     /**
      * Implements CEI
      * @param _auctionId The ID number of the auction
