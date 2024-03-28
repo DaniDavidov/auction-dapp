@@ -14,6 +14,8 @@ contract AuctionRepository is ReentrancyGuard {
     error AuctionRepository__BidMustBeHigherThanCurrentBid();
     error AuctionRepository__OnlyOwnerCanCancelAuction();
     error AuctionRepository__DeedOperatorMustBeAuctionContract();
+    error AuctionRepository__AuctionNotCanceled();
+    error AuctionRepository__Unauthorized();
 
 
     Auction[] private auctions;
@@ -42,6 +44,7 @@ contract AuctionRepository is ReentrancyGuard {
         uint256 startPrice;
         address payable owner;
         bool finalized;
+        bool canceled;
     }
 
     event AuctionCreated(uint256 indexed auctionId, uint256 indexed deedId);
@@ -134,6 +137,9 @@ contract AuctionRepository is ReentrancyGuard {
      * @dev The auction can be finalized if both conditions are respected:
      *      - The auction has ended
      *      - There is at least one bid for the auction
+     * @dev If all conditions are respected the function transfers
+     *      the deed of the auction to the last bidder
+     *      and pays the bid amount to the auction owners
      */
     function finalizeAuction(uint256 _auctionId, address _deedRepoAddress) external nonReentrant {
         Auction memory auction = getAuctionById(_auctionId);
@@ -150,16 +156,16 @@ contract AuctionRepository is ReentrancyGuard {
         if (bids.length == 0) {
             cancelAuction(_auctionId, _deedRepoAddress);
         } else {
-            // return the bid to the bidder
+            // pay the bid to the auction owner
             Bid memory lastBid = bids[bids.length - 1];
-            (bool success, ) = payable(lastBid.bidder).call{value: lastBid.amount}("");
+            (bool success, ) = payable(auction.owner).call{value: lastBid.amount}("");
             if (!success) {
                 revert();
             }
 
-            // return the deed ownership to the owner of the auction
+            // transfer the deed to the last bidder of the auction
             DeedRepository deedRepository = DeedRepository(_deedRepoAddress);
-            deedRepository.safeTransferFrom(address(this), auction.owner, auction.deedId);
+            deedRepository.safeTransferFrom(auction.owner, lastBid.bidder, auction.deedId);
             auctions[_auctionId].finalized = true;
             emit AuctionFinalized(msg.sender, _auctionId);
         }
@@ -206,11 +212,9 @@ contract AuctionRepository is ReentrancyGuard {
         if (block.timestamp > auction.blockDeadline) {
             revert AuctionRepository__AuctionExpired();
         }
-
-        auctions[_auctionId].finalized = true;
-
-        DeedRepository deedRepository = DeedRepository(_deedRepoAddress);
-        deedRepository.safeTransferFrom(address(this), auction.owner, auction.deedId);
+        Auction storage s_auction = auctions[_auctionId];
+        s_auction.finalized = true;
+        s_auction.canceled = true;
 
         Bid[] memory bids = auctionBids[_auctionId];
         if (bids.length > 0) {
@@ -221,5 +225,24 @@ contract AuctionRepository is ReentrancyGuard {
             }
         }
         emit AuctionCancelled(_auctionId);
+    }
+
+    /**
+     * @param _auctionId ID number of the auction 
+     * @param _deedRepoAddress address of the deed repository
+     * @dev Only if the auction is canceled the owner of the deed can revoke the operator of his own deed
+     */
+    function revokeOperator(uint256 _auctionId, address _deedRepoAddress) external {
+        Auction memory auction = getAuctionById(_auctionId);
+        if (!auction.canceled) {
+            revert AuctionRepository__AuctionNotCanceled();
+        }
+
+        if (msg.sender != auction.owner) {
+            revert AuctionRepository__Unauthorized();
+        }
+
+        DeedRepository deedRepository = DeedRepository(_deedRepoAddress);
+        deedRepository.setApprovalForAll(address(this), false);
     }
 }
